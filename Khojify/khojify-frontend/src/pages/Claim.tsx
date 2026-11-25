@@ -1,0 +1,46 @@
+import { useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { ShieldCheck, KeyRound, Lock, Loader2, ImagePlus, X } from 'lucide-react'
+import { ErrorState, ItemArt, PageHead, Skeleton } from '../components/ui'
+import { useApp } from '../components/Providers'
+import { useAsync } from '../hooks/useAsync'
+import { getReports, createClaim, uploadPhoto } from '../services/api'
+import type { Claim as ClaimT } from '../types'
+
+export default function Claim() {
+  const { id = '' } = useParams(), { user, toast } = useApp(), { data, loading, error, reload } = useAsync(getReports)
+  const [f, setF] = useState({ detail: '', mark: '' }), [proof, setProof] = useState<string>(), [busy, setBusy] = useState(false), [claim, setClaim] = useState<ClaimT | null>(null), [err, setErr] = useState('')
+  const r = data?.find((x) => x.id === id)
+  if (error) return <div className="wrap py-16"><ErrorState message={error} retry={reload} /></div>
+  if (loading) return <div className="wrap max-w-2xl py-16"><Skeleton className="h-96" /></div>
+  if (!r || r.type !== 'found' || r.status !== 'Active') return <div className="wrap max-w-2xl py-16"><ErrorState message="This item can’t be claimed. It may be a lost report, already reunited, or removed." /><Link to="/browse" className="btn-dark mt-6">Back to Explore</Link></div>
+  if (!user) return <div className="wrap max-w-xl py-20 text-center"><Lock className="mx-auto text-moss" size={36} /><h1 className="h2 mt-4">Sign in to claim</h1><p className="mt-2 text-muted">We need to know who is claiming so the reporter can verify you privately.</p><Link to="/login" className="btn-dark mt-6">Sign In</Link></div>
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (f.detail.trim().length < 3) return setErr('Enter a hidden detail only the owner would know.')
+    if (f.mark.trim().length < 10) return setErr('Describe a unique mark, scratch or sticker (at least 10 characters).')
+    setErr(''); setBusy(true)
+    try { setClaim(await createClaim(r.id, { detail: f.detail.trim(), mark: f.mark.trim(), proof })); toast('Claim submitted privately') } catch (x) { setErr((x as Error).message) } finally { setBusy(false) }
+  }
+  if (claim) return (
+    <div className="wrap grid max-w-xl place-items-center py-20 text-center"><span className="grid h-20 w-20 animate-pop place-items-center rounded-full bg-forest text-gold"><KeyRound size={34} /></span>
+      <h1 className="h2 mt-6">Claim submitted</h1><p className="mt-2 text-muted">Your private claim reference code</p><p className="mt-1 rounded-full bg-sage px-6 py-2 text-2xl font-extrabold tracking-widest">{claim.code}</p>
+      <p className="mt-4 text-sm text-muted">Status: <b>{claim.status}</b>. Keep this code private. The reporter or a moderator will compare your details with what they stored, and nothing is approved automatically.</p><Link to="/profile" className="btn-dark mt-6">Track my claims</Link></div>
+  )
+  return (
+    <div className="wrap max-w-2xl py-14">
+      <PageHead title="Is this your item?" sub="Answer privately. Your answers are never shown publicly." />
+      <div className="card mb-6 flex items-center gap-4 bg-sage p-4"><ItemArt category={r.category} color={r.color} photo={r.photo} className="h-16 w-16 shrink-0 rounded-2xl" /><div><p className="font-bold">{r.name}</p><p className="text-sm text-muted">Found at {r.location} · {r.id}</p></div></div>
+      <form onSubmit={submit} noValidate className="card space-y-5 p-6 sm:p-8">
+        <div><label className="label" htmlFor="d">One hidden identifying detail</label><input id="d" className="input" placeholder="e.g. what’s written inside, a lock-screen photo, a contents item" value={f.detail} onChange={(e) => setF({ ...f, detail: e.target.value })} /></div>
+        <div><label className="label" htmlFor="m">Unique mark, scratch, sticker or feature</label><textarea id="m" rows={3} className="input" value={f.mark} onChange={(e) => setF({ ...f, mark: e.target.value })} /></div>
+        <div><span className="label">Supporting image <span className="font-normal text-muted">(optional)</span></span>
+          {proof ? <div className="relative inline-block"><img src={proof} alt="Proof preview" className="h-32 rounded-2xl object-cover" /><button type="button" onClick={() => setProof(undefined)} aria-label="Remove image" className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full bg-forest text-ivory"><X size={14} /></button></div>
+            : <label className="btn-line cursor-pointer"><ImagePlus size={16} />Add image<input type="file" accept="image/*" hidden onChange={async (e) => { try { const file = e.target.files?.[0]; if (file) setProof(await uploadPhoto(file)) } catch (x) { toast((x as Error).message, 'err') } }} /></label>}</div>
+        <p className="flex gap-2 rounded-2xl bg-sage p-4 text-sm text-moss"><ShieldCheck size={18} className="shrink-0" />A claim code is generated by the server and shown only to you. It is never listed publicly.</p>
+        {err && <p role="alert" className="text-sm font-medium text-red-700">{err}</p>}
+        <button disabled={busy} className="btn-dark w-full !py-3.5 disabled:opacity-70">{busy ? <><Loader2 size={16} className="animate-spin" />Submitting…</> : 'Submit private claim'}</button>
+      </form>
+    </div>
+  )
+}
